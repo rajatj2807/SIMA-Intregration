@@ -2,20 +2,6 @@
   "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-    "sharepointonline_1_Connection_Name": {
-      "type": "string",
-      "defaultValue": "sharepointonline"
-    },
-    "sharepointonline_1_Connection_DisplayName": {
-      "type": "string",
-      "defaultValue": "George.Tarpeh@dev2.trade.gov"
-    },
-    "sharepointonline_1_token:TenantId": {
-      "type": "string",
-      "metadata": {
-        "description": "The tenant ID of for the Azure Active Directory application"
-      }
-    },
     "sql_1_Connection_Name": {
       "type": "string",
       "defaultValue": "sql-1"
@@ -28,13 +14,15 @@
       "type": "string",
       "metadata": {
         "description": "SQL server name"
-      }
+      },
+      "defaultValue": "inta-sqla-01.database.windows.net"
     },
     "sql_1_database": {
       "type": "string",
       "metadata": {
         "description": "SQL database name"
-      }
+      },
+      "defaultValue": "Inta-dataloader-01"
     },
     "sql_1_username": {
       "type": "securestring",
@@ -52,6 +40,20 @@
       "type": "securestring",
       "metadata": {
         "description": "SQL Connection String"
+      }
+    },
+    "sharepointonline_1_Connection_Name": {
+      "type": "string",
+      "defaultValue": "sharepointonline"
+    },
+    "sharepointonline_1_Connection_DisplayName": {
+      "type": "string",
+      "defaultValue": "George.Tarpeh@dev2.trade.gov"
+    },
+    "sharepointonline_1_token:TenantId": {
+      "type": "string",
+      "metadata": {
+        "description": "The tenant ID of for the Azure Active Directory application"
       }
     },
     "LogicAppLocation": {
@@ -106,52 +108,323 @@
         "state": "Enabled",
         "definition": {
           "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+          "contentVersion": "1.0.0.0",
+          "parameters": {
+            "$connections": {
+              "defaultValue": {},
+              "type": "Object"
+            }
+          },
+          "triggers": {
+            "Recurrence": {
+              "recurrence": {
+                "frequency": "Day",
+                "interval": 1,
+                "startTime": "2020-05-01T00:00:00Z"
+              },
+              "type": "Recurrence"
+            }
+          },
           "actions": {
+            "Execute_a_SQL_query_(V2)": {
+              "runAfter": {},
+              "type": "ApiConnection",
+              "inputs": {
+                "body": {
+                  "query": "IF OBJECT_ID(N'dbo.TRACKER', N'U') IS NULL\nBEGIN\n    CREATE TABLE TRACKER (\n\t\t[TrackerName] VARCHAR(255) PRIMARY KEY,\n\t\t[TrackerValue] VARCHAR(255)\n\t);\n\tINSERT INTO TRACKER(TrackerName,TrackerValue) VALUES ('StandardLicense','0');\nEND\n\nIF OBJECT_ID(N'dbo.TRACKER', N'U') IS NOT NULL\nBEGIN\n\tIF NOT EXISTS (SELECT * FROM dbo.TRACKER WHERE TrackerName = N'StandardLicense')\n\tBEGIN\n\t\tINSERT INTO TRACKER(TrackerName,TrackerValue) VALUES ('StandardLicense','0');\n\tEND\nEND\n\nIF OBJECT_ID(N'dbo.TRACKER', N'U') IS NOT NULL\nBEGIN\n\tIF NOT EXISTS (SELECT * FROM dbo.TRACKER WHERE TrackerName = N'AccountList')\n\tBEGIN\n\t\tINSERT INTO TRACKER(TrackerName,TrackerValue) VALUES ('AccountList','0');\n\tEND\nEND\n\n\nIF OBJECT_ID(N'dbo.SIMA_STANDARD_STEEL_LICENSE', N'U') IS NULL\nBEGIN\ncreate TABLE SIMA_STANDARD_STEEL_LICENSE (\n[Account_ID] Integer,\n[ExpirationDate] DATE,\n[ActivationDate] DATE,\n[LicenseNumber] VARCHAR(255),\n[ApplicationDate] Date,\n[HTS Code] VARCHAR(255),\n[ValidFromDate] date,\n[Title] varchar(255),\n[JsonData] varchar(MAX),\n[LicenseStatus] varchar(255),\n[ProductType] varchar(255),\n[ForeignTradeZone] bit,\n[CustomsEntryNumber] varchar(255),\n[Fax] varchar(255),\n[Agree] BIT,\n[ExpectedDateOfImportation] date,\n[ExpectedDateOfExport] date,\n[CountryOfExportation] varchar(255),\n[CountryOfOrigin] varchar(255),\n[ManufacturerName] varchar(255),\n[ExporterName] varchar(255),\n[ImporterName] varchar(255)\n);\nEND\n\nIF OBJECT_ID(N'dbo.SIMA_Accounts', N'U') IS NULL\nBEGIN\ncreate TABLE SIMA_Accounts (\n[ID] Integer,\n[EmployerIdNumber] VARCHAR(255),\n[CompanyName] VARCHAR(255),\n[CompanyType] VARCHAR(255),\n[Address] VARCHAR(255),\n[City] VARCHAR(255),\n[State] varchar(255),\n[PostalCode] varchar(255),\n[Phone] varchar(255),\n[GivenName] varchar(255),\n[Surname] varchar(255),\n[Email] varchar(255),\n[EmailAlternate] varchar(255),\n[Fax] varchar(255),\n[LegacyID] varchar(255)\n);\nEND\n"
+                },
+                "host": {
+                  "connection": {
+                    "name": "@parameters('$connections')['sql']['connectionId']"
+                  }
+                },
+                "method": "post",
+                "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent('inta-sqla-01.database.windows.net'))},@{encodeURIComponent(encodeURIComponent('Inta-dataloader-01'))}/query/sql"
+              }
+            },
             "For_each": {
-              "type": "Foreach",
               "foreach": "@body('Get_items_from_sharepoint')?['value']",
               "actions": {
                 "Condition": {
-                  "type": "If",
-                  "expression": {
-                    "and": [
-                      {
-                        "less": [
-                          "@variables('LastFetchId')",
-                          "@items('For_each')?['AccountId']"
-                        ]
-                      }
-                    ]
-                  },
                   "actions": {
                     "Insert_row_(V2)": {
+                      "runAfter": {
+                        "Parse_JSON": [
+                          "Succeeded"
+                        ]
+                      },
                       "type": "ApiConnection",
                       "inputs": {
+                        "body": {
+                          "Account_ID": "@items('For_each')?['AccountId']",
+                          "ActivationDate": "@items('For_each')?['ActivationDate']",
+                          "Agree": "@body('Parse_JSON')?['Agree']",
+                          "ApplicationDate": "@items('For_each')?['ApplicationDate']",
+                          "CountryOfExportation": "@{body('Parse_JSON')?['CountryOfExportation']}",
+                          "CountryOfOrigin": "@{body('Parse_JSON')?['CountryOfOrigin']}",
+                          "CustomsEntryNumber": "@{body('Parse_JSON')?['CustomsEntryNumber']}",
+                          "ExpectedDateOfExport": "@{body('Parse_JSON')?['ExpectedDateOfExport']}",
+                          "ExpectedDateOfImportation": "@{body('Parse_JSON')?['ExpectedDateOfImportation']}",
+                          "ExpirationDate": "@items('For_each')?['ExpirationDate']",
+                          "ExporterName": "@{body('Parse_JSON')?['ExporterName']}",
+                          "Fax": "@{body('Parse_JSON')?['Fax']}",
+                          "ForeignTradeZone": "@body('Parse_JSON')?['ForeignTradeZone']",
+                          "HTS_x0020_Code": "@items('For_each')?['HtsCode']",
+                          "ImporterName": "@{body('Parse_JSON')?['ImporterName']}",
+                          "LicenseNumber": "@items('For_each')?['LicenseNumber']",
+                          "LicenseStatus": "@body('Parse_License_status')?['Value']",
+                          "ManufacturerName": "@{body('Parse_JSON')?['ManufacturerName']}",
+                          "ProductType": "@items('For_each')?['ProductType']",
+                          "Title": "@items('For_each')?['Title']",
+                          "ValidFromDate": "@items('For_each')?['Title']"
+                        },
                         "host": {
                           "connection": {
                             "name": "@parameters('$connections')['sql']['connectionId']"
                           }
                         },
                         "method": "post",
-                        "body": {
-                          "Account_ID": "@items('For_each')?['AccountId']",
-                          "ExpirationDate": "@items('For_each')?['ExpirationDate']",
-                          "LicenseNumber": "@items('For_each')?['LicenseNumber']",
-                          "ApplicationDate": "@items('For_each')?['ApplicationDate']",
-                          "HTS_x0020_Code": "@items('For_each')?['HtsCode']",
-                          "ValidFromDate": "@items('For_each')?['Title']",
-                          "Title": "@items('For_each')?['Title']",
-                          "LicenseStatus": "@body('Parse_License_status')?['Value']"
-                        },
                         "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent('default'))},@{encodeURIComponent(encodeURIComponent('default'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[SIMA_STANDARD_STEEL_LICENSE]'))}/items"
-                      },
+                      }
+                    },
+                    "Parse_JSON": {
                       "runAfter": {
                         "Parse_License_status": [
                           "Succeeded"
                         ]
+                      },
+                      "type": "ParseJson",
+                      "inputs": {
+                        "content": "@replace(items('For_each')?['JsonData'],'\\','')",
+                        "schema": {
+                          "properties": {
+                            "AccountId": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ]
+                            },
+                            "ActivationDate": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "Agree": {
+                              "type": [
+                                "boolean",
+                                "null"
+                              ]
+                            },
+                            "ApplicationDate": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "CountryOfExportation": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "CountryOfOrigin": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "CustomsEntryNumber": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "ExpectedDateOfExport": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "ExpectedDateOfImportation": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "ExpectedPortOfEntry": {
+                              "properties": {
+                                "DistrictCode": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "Name": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                },
+                                "PortCode": {
+                                  "type": [
+                                    "string",
+                                    "null"
+                                  ]
+                                }
+                              },
+                              "type": "object"
+                            },
+                            "ExpirationDate": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "ExporterName": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "Fax": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "ForeignTradeZone": {
+                              "type": [
+                                "boolean",
+                                "null"
+                              ]
+                            },
+                            "Id": {
+                              "type": [
+                                "integer",
+                                "null"
+                              ]
+                            },
+                            "ImporterName": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "LicenseNumber": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "LicenseStatus": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "ManufacturerName": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "ProductType": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            },
+                            "ProductsInformation": {
+                              "items": {
+                                "properties": {
+                                  "CountryofMeltAndPour": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "CountryofSmelt": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "CustomsValue": {
+                                    "type": [
+                                      "integer",
+                                      "null"
+                                    ]
+                                  },
+                                  "HtsNumber": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "ProductCategory": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "ProductDescription": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "ProductType": {
+                                    "type": [
+                                      "string",
+                                      "null"
+                                    ]
+                                  },
+                                  "UnitValue": {
+                                    "type": [
+                                      "number",
+                                      "null"
+                                    ]
+                                  },
+                                  "Volume": {
+                                    "type": [
+                                      "integer",
+                                      "null"
+                                    ]
+                                  }
+                                },
+                                "required": [
+                                  "ProductType",
+                                  "HtsNumber",
+                                  "ProductDescription",
+                                  "ProductCategory",
+                                  "CountryofSmelt",
+                                  "CountryofMeltAndPour",
+                                  "Volume",
+                                  "CustomsValue",
+                                  "UnitValue"
+                                ],
+                                "type": "object"
+                              },
+                              "type": "array"
+                            },
+                            "ValidFromDate": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "type": "object"
+                        }
                       }
                     },
                     "Parse_License_status": {
+                      "runAfter": {
+                        "Update_LastFetchId": [
+                          "Succeeded"
+                        ]
+                      },
                       "type": "ParseJson",
                       "inputs": {
                         "content": "@items('For_each')?['LicenseStatus']",
@@ -169,32 +442,118 @@
                           },
                           "type": "object"
                         }
-                      },
-                      "runAfter": {
-                        "Update_LastFetchId": [
-                          "Succeeded"
-                        ]
                       }
                     },
                     "Update_LastFetchId": {
+                      "runAfter": {},
                       "type": "SetVariable",
                       "inputs": {
                         "name": "LastFetchId",
                         "value": "@int(items('For_each')?['AccountId'])"
-                      },
-                      "runAfter": {}
+                      }
                     }
                   },
-                  "runAfter": {}
+                  "runAfter": {},
+                  "expression": {
+                    "and": [
+                      {
+                        "less": [
+                          "@variables('LastFetchId')",
+                          "@items('For_each')?['AccountId']"
+                        ]
+                      }
+                    ]
+                  },
+                  "type": "If"
                 }
               },
               "runAfter": {
                 "Get_items_from_sharepoint": [
                   "Succeeded"
                 ]
+              },
+              "type": "Foreach"
+            },
+            "For_each_2": {
+              "foreach": "@body('Get_items')?['value']",
+              "actions": {
+                "Condition_2": {
+                  "actions": {
+                    "Insert_row_(V2)_2": {
+                      "runAfter": {
+                        "Set_variable": [
+                          "Succeeded"
+                        ]
+                      },
+                      "type": "ApiConnection",
+                      "inputs": {
+                        "body": {
+                          "Address": "@items('For_each_2')?['Address']",
+                          "City": "@items('For_each_2')?['City']",
+                          "CompanyName": "@items('For_each_2')?['CompanyName']",
+                          "CompanyType": "@items('For_each_2')?['CompanyType']",
+                          "Email": "@items('For_each_2')?['Email']",
+                          "EmailAlternate": "@items('For_each_2')?['EmailAlternate']",
+                          "EmployerIdNumber": "@items('For_each_2')?['EmployerIdNumber']",
+                          "Fax": "@items('For_each_2')?['Fax']",
+                          "GivenName": "@items('For_each_2')?['GivenName']",
+                          "ID": "@items('For_each_2')?['ID']",
+                          "LegacyID": "@items('For_each_2')?['LegacyID']",
+                          "Phone": "@items('For_each_2')?['Phone']",
+                          "PostalCode": "@items('For_each_2')?['PostalCode']",
+                          "State": "@items('For_each_2')?['State']",
+                          "Surname": "@items('For_each_2')?['Surname']"
+                        },
+                        "host": {
+                          "connection": {
+                            "name": "@parameters('$connections')['sql']['connectionId']"
+                          }
+                        },
+                        "method": "post",
+                        "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent('inta-sqla-01.database.windows.net'))},@{encodeURIComponent(encodeURIComponent('Inta-dataloader-01'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[SIMA_Accounts]'))}/items"
+                      }
+                    },
+                    "Set_variable": {
+                      "runAfter": {},
+                      "type": "SetVariable",
+                      "inputs": {
+                        "name": "LastFetchAccountId",
+                        "value": "@int(items('For_each_2')?['ID'])"
+                      }
+                    }
+                  },
+                  "runAfter": {},
+                  "expression": {
+                    "and": [
+                      {
+                        "less": [
+                          "@variables('LastFetchAccountId')",
+                          "@items('For_each_2')?['ID']"
+                        ]
+                      }
+                    ]
+                  },
+                  "type": "If"
+                }
+              },
+              "runAfter": {
+                "Get_items": [
+                  "Succeeded"
+                ]
+              },
+              "type": "Foreach",
+              "runtimeConfiguration": {
+                "concurrency": {
+                  "repetitions": 1
+                }
               }
             },
             "Get_Last_Time_Fetch_From_Sql": {
+              "runAfter": {
+                "Tracker_Id": [
+                  "Succeeded"
+                ]
+              },
               "type": "ApiConnection",
               "inputs": {
                 "host": {
@@ -204,14 +563,14 @@
                 },
                 "method": "get",
                 "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent('default'))},@{encodeURIComponent(encodeURIComponent('default'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[TRACKER]'))}/items/@{encodeURIComponent(encodeURIComponent(variables('StandardLicensesTrackerId')))}"
-              },
-              "runAfter": {
-                "Tracker_Id": [
-                  "Succeeded"
-                ]
               }
             },
-            "Get_items_from_sharepoint": {
+            "Get_items": {
+              "runAfter": {
+                "Initialize_variable_2": [
+                  "Succeeded"
+                ]
+              },
               "type": "ApiConnection",
               "inputs": {
                 "host": {
@@ -220,19 +579,93 @@
                   }
                 },
                 "method": "get",
-                "path": "/datasets/@{encodeURIComponent(encodeURIComponent('https://itadev2.sharepoint.com/sites/SIMAIntegration'))}/tables/@{encodeURIComponent(encodeURIComponent('f65e3e03-ed3b-41bd-997e-45f58be4114f'))}/items",
+                "path": "/datasets/@{encodeURIComponent(encodeURIComponent('https://itadev2.sharepoint.com/sites/SIMAIntegration'))}/tables/@{encodeURIComponent(encodeURIComponent('6a3ad03d-3cfe-412e-8630-78b661f09e2b'))}/items",
                 "queries": {
-                  "$filter": "AccountId gt @{variables('LastFetchId')}",
-                  "view": "bb98b3d2-ff37-4809-9afc-c2ead64cdb0f"
+                  "$filter": "ID gt @{variables('LastFetchAccountId')}",
+                  "$orderby": "ID",
+                  "view": "9826949b-6827-4194-b052-94d13430a26f"
                 }
-              },
+              }
+            },
+            "Get_items_from_sharepoint": {
               "runAfter": {
                 "Last_Fetch_Id_From_Sql": [
                   "Succeeded"
                 ]
+              },
+              "type": "ApiConnection",
+              "inputs": {
+                "host": {
+                  "connection": {
+                    "name": "@parameters('$connections')['sharepointonline']['connectionId']"
+                  }
+                },
+                "method": "get",
+                "path": "/datasets/@{encodeURIComponent(encodeURIComponent('https://itadev2.sharepoint.com/sites/SIMAIntegration'))}/tables/@{encodeURIComponent(encodeURIComponent('8723cd5c-baa9-4911-b57e-5a56eab97112'))}/items",
+                "queries": {
+                  "$filter": "AccountId gt @{variables('LastFetchId')}",
+                  "$orderby": "AccountId",
+                  "view": "d945b643-2f58-413b-8afe-b25833029366"
+                }
+              }
+            },
+            "Get_row_(V2)": {
+              "runAfter": {
+                "Initialize_variable": [
+                  "Succeeded"
+                ]
+              },
+              "type": "ApiConnection",
+              "inputs": {
+                "host": {
+                  "connection": {
+                    "name": "@parameters('$connections')['sql']['connectionId']"
+                  }
+                },
+                "method": "get",
+                "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent('inta-sqla-01.database.windows.net'))},@{encodeURIComponent(encodeURIComponent('Inta-dataloader-01'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[TRACKER]'))}/items/@{encodeURIComponent(encodeURIComponent(variables('AccountTrackerId')))}"
+              }
+            },
+            "Initialize_variable": {
+              "runAfter": {
+                "Execute_a_SQL_query_(V2)": [
+                  "Succeeded"
+                ]
+              },
+              "type": "InitializeVariable",
+              "inputs": {
+                "variables": [
+                  {
+                    "name": "AccountTrackerId",
+                    "type": "string",
+                    "value": "AccountList"
+                  }
+                ]
+              }
+            },
+            "Initialize_variable_2": {
+              "runAfter": {
+                "Get_row_(V2)": [
+                  "Succeeded"
+                ]
+              },
+              "type": "InitializeVariable",
+              "inputs": {
+                "variables": [
+                  {
+                    "name": "LastFetchAccountId",
+                    "type": "integer",
+                    "value": "@int(body('Get_row_(V2)')?['TrackerValue'])"
+                  }
+                ]
               }
             },
             "Last_Fetch_Id_From_Sql": {
+              "runAfter": {
+                "Get_Last_Time_Fetch_From_Sql": [
+                  "Succeeded"
+                ]
+              },
               "type": "InitializeVariable",
               "inputs": {
                 "variables": [
@@ -242,14 +675,14 @@
                     "value": "@int(body('Get_Last_Time_Fetch_From_Sql')?['TrackerValue'])"
                   }
                 ]
-              },
-              "runAfter": {
-                "Get_Last_Time_Fetch_From_Sql": [
-                  "Succeeded"
-                ]
               }
             },
             "Tracker_Id": {
+              "runAfter": {
+                "Execute_a_SQL_query_(V2)": [
+                  "Succeeded"
+                ]
+              },
               "type": "InitializeVariable",
               "inputs": {
                 "variables": [
@@ -259,81 +692,63 @@
                     "value": "StandardLicense"
                   }
                 ]
-              },
-              "runAfter": {
-                "Execute_a_SQL_query_(V2)": [
-                  "Succeeded"
-                ]
               }
             },
             "Update_Tracker": {
+              "runAfter": {
+                "For_each": [
+                  "Succeeded"
+                ]
+              },
               "type": "ApiConnection",
               "inputs": {
+                "body": {
+                  "TrackerValue": "@{string(variables('LastFetchId'))}"
+                },
                 "host": {
                   "connection": {
                     "name": "@parameters('$connections')['sql']['connectionId']"
                   }
                 },
                 "method": "patch",
-                "body": {
-                  "TrackerValue": "@{string(variables('LastFetchId'))}"
-                },
                 "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent('default'))},@{encodeURIComponent(encodeURIComponent('default'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[TRACKER]'))}/items/@{encodeURIComponent(encodeURIComponent(variables('StandardLicensesTrackerId')))}"
-              },
-              "runAfter": {
-                "For_each": [
-                  "Succeeded"
-                ]
               }
             },
-            "Execute_a_SQL_query_(V2)": {
+            "Update_row_(V2)": {
+              "runAfter": {
+                "For_each_2": [
+                  "Succeeded"
+                ]
+              },
               "type": "ApiConnection",
               "inputs": {
+                "body": {
+                  "TrackerValue": "@{variables('LastFetchAccountId')}"
+                },
                 "host": {
                   "connection": {
                     "name": "@parameters('$connections')['sql']['connectionId']"
                   }
                 },
-                "method": "post",
-                "body": {
-                  "query": "IF OBJECT_ID(N'dbo.TRACKER', N'U') IS NULL\nBEGIN\n    CREATE TABLE TRACKER (\n\t\t[TrackerName] VARCHAR(255) PRIMARY KEY,\n\t\t[TrackerValue] VARCHAR(255)\n\t);\n\tINSERT INTO TRACKER(TrackerName,TrackerValue) VALUES ('StandardLicense','0');\nEND\n\nIF OBJECT_ID(N'dbo.TRACKER', N'U') IS NOT NULL\nBEGIN\n\tIF NOT EXISTS (SELECT * FROM dbo.TRACKER WHERE TrackerName = N'StandardLicense')\n\tBEGIN\n\t\tINSERT INTO TRACKER(TrackerName,TrackerValue) VALUES ('StandardLicense','0');\n\tEND\nEND\n\nIF OBJECT_ID(N'dbo.SIMA_STANDARD_STEEL_LICENSE', N'U') IS NULL\nBEGIN\n\tCREATE TABLE SIMA_STANDARD_STEEL_LICENSE (\n\t[Account_ID] INTEGER,\n\t[ExpirationDate] DATE,\n\t[LicenseNumber] VARCHAR(255),\n\t[ApplicationDate] DATE,\n\t[HTS Code] VARCHAR(255),\n\t[ValidFromDate] DATE,\n\t[Title] VARCHAR(255),\n\t[JsonData] VARCHAR(MAX),\n\t[LicenseStatus] VARCHAR(255)\n\t);\nEND\n"
-                },
-                "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent('inta-sqla-01.database.windows.net'))},@{encodeURIComponent(encodeURIComponent('Inta-dataloader-01'))}/query/sql"
-              },
-              "runAfter": {}
-            }
-          },
-          "parameters": {
-            "$connections": {
-              "defaultValue": {},
-              "type": "Object"
-            }
-          },
-          "triggers": {
-            "Recurrence": {
-              "type": "Recurrence",
-              "recurrence": {
-                "frequency": "Day",
-                "interval": 1,
-                "startTime": "2020-05-01T00:00:00Z"
+                "method": "patch",
+                "path": "/v2/datasets/@{encodeURIComponent(encodeURIComponent('inta-sqla-01.database.windows.net'))},@{encodeURIComponent(encodeURIComponent('Inta-dataloader-01'))}/tables/@{encodeURIComponent(encodeURIComponent('[dbo].[TRACKER]'))}/items/@{encodeURIComponent(encodeURIComponent(variables('AccountTrackerId')))}"
               }
             }
           },
-          "contentVersion": "1.0.0.0",
           "outputs": {}
         },
         "parameters": {
           "$connections": {
             "value": {
-              "sql": {
-                "id": "[concat(subscription().id, '/providers/Microsoft.Web/locations/', parameters('LogicAppLocation'), '/managedApis/', 'sql')]",
-                "connectionId": "[resourceId('Microsoft.Web/connections', parameters('sql_1_Connection_Name'))]",
-                "connectionName": "[parameters('sql_1_Connection_Name')]"
-              },
               "sharepointonline": {
-                "id": "[concat(subscription().id, '/providers/Microsoft.Web/locations/', parameters('LogicAppLocation'), '/managedApis/', 'sharepointonline')]",
+                "id": "[concat(subscription().id, '/providers/Microsoft.Web/locations/', 'eastus', '/managedApis/', 'sharepointonline')]",
                 "connectionId": "[resourceId('Microsoft.Web/connections', parameters('sharepointonline_1_Connection_Name'))]",
                 "connectionName": "[parameters('sharepointonline_1_Connection_Name')]"
+              },
+              "sql": {
+                "id": "[concat(subscription().id, '/providers/Microsoft.Web/locations/', 'eastus', '/managedApis/', 'sql')]",
+                "connectionId": "[resourceId('Microsoft.Web/connections', parameters('sql_1_Connection_Name'))]",
+                "connectionName": "[parameters('sql_1_Connection_Name')]"
               }
             }
           }
@@ -347,24 +762,9 @@
       },
       "apiVersion": "2016-06-01",
       "dependsOn": [
-        "[resourceId('Microsoft.Web/connections', parameters('sql_1_Connection_Name'))]",
-        "[resourceId('Microsoft.Web/connections', parameters('sharepointonline_1_Connection_Name'))]"
+        "[resourceId('Microsoft.Web/connections', parameters('sharepointonline_1_Connection_Name'))]",
+        "[resourceId('Microsoft.Web/connections', parameters('sql_1_Connection_Name'))]"
       ]
-    },
-    {
-      "type": "MICROSOFT.WEB/CONNECTIONS",
-      "apiVersion": "2018-07-01-preview",
-      "name": "[parameters('sharepointonline_1_Connection_Name')]",
-      "location": "eastus",
-      "properties": {
-        "api": {
-          "id": "[concat(subscription().id, '/providers/Microsoft.Web/locations/', 'eastus', '/managedApis/', 'sharepointonline')]"
-        },
-        "displayName": "[parameters('sharepointonline_1_Connection_DisplayName')]",
-        "nonSecretParameterValues": {
-          "token:TenantId": "[parameters('sharepointonline_1_token:TenantId')]"
-        }
-      }
     },
     {
       "type": "MICROSOFT.WEB/CONNECTIONS",
@@ -382,6 +782,21 @@
           "username": "[parameters('sql_1_username')]",
           "password": "[parameters('sql_1_password')]",
           "sqlConnectionString": "[parameters('sql_1_sqlConnectionString')]"
+        }
+      }
+    },
+    {
+      "type": "MICROSOFT.WEB/CONNECTIONS",
+      "apiVersion": "2018-07-01-preview",
+      "name": "[parameters('sharepointonline_1_Connection_Name')]",
+      "location": "eastus",
+      "properties": {
+        "api": {
+          "id": "[concat(subscription().id, '/providers/Microsoft.Web/locations/', 'eastus', '/managedApis/', 'sharepointonline')]"
+        },
+        "displayName": "[parameters('sharepointonline_1_Connection_DisplayName')]",
+        "nonSecretParameterValues": {
+          "token:TenantId": "[parameters('sharepointonline_1_token:TenantId')]"
         }
       }
     }
